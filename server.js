@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const mongoose = require("mongoose");
 const path = require("path");
@@ -6,6 +7,8 @@ const cors = require("cors");
 const session = require("express-session");
 
 const app = express();
+
+// -------------------- MIDDLEWARE --------------------
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -22,37 +25,56 @@ app.use(
 // ⭐ SERVE STATIC FILES
 app.use(express.static(path.join(__dirname, "public")));
 
-// ⭐ CONNECT TO MONGODB
+// -------------------- MONGODB CONNECTION --------------------
+const MONGO_URI = "mongodb://127.0.0.1:27017/myappdb";
+
 mongoose
-  .connect("mongodb://127.0.0.1:27017/myappdb", {
+  .connect(MONGO_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log("Mongo Error:", err));
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ MongoDB Connection Error:", err));
 
-// ⭐ USER SCHEMA
+// Ensure connection before proceeding
+mongoose.connection.once("open", () => {
+  console.log("MongoDB connection ready");
+});
+
+// -------------------- SCHEMAS & MODELS --------------------
 const userSchema = new mongoose.Schema({
-  username: String,
-  email: String,
-  password: String,
+  username: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
 });
 const User = mongoose.model("User", userSchema);
 
-// ⭐ COURSE SCHEMA
 const courseSchema = new mongoose.Schema({
-  studentName: String,
-  studentID: String,
-  courseName: String,
-  courseID: String,
-  email: String, // to identify student courses
+  studentName: { type: String, required: true },
+  studentID: { type: String, required: true },
+  courseName: { type: String, required: true },
+  courseID: { type: String, required: true },
+  email: { type: String, required: true },
 });
 const Course = mongoose.model("Course", courseSchema);
 
-// ⭐ REGISTER ROUTE
+// -------------------- ROUTES --------------------
+
+// REGISTER
 app.post("/register", async (req, res) => {
   try {
     const { username, email, password } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.send(`
+        <script>
+          alert("User with this email already exists!");
+          window.location.href = "/register.html";
+        </script>
+      `);
+    }
 
     const hashed = await bcrypt.hash(password, 10);
 
@@ -69,11 +91,17 @@ app.post("/register", async (req, res) => {
       </script>
     `);
   } catch (err) {
-    res.send("Error: " + err);
+    console.error(err);
+    res.send(`
+      <script>
+        alert("Error occurred during registration!");
+        window.location.href = "/register.html";
+      </script>
+    `);
   }
 });
 
-// ⭐ LOGIN ROUTE
+// LOGIN
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -96,7 +124,7 @@ app.post("/login", async (req, res) => {
         </script>
       `);
 
-    // ⭐ STORE SESSION
+    // STORE SESSION
     req.session.userEmail = email;
 
     res.send(`
@@ -106,15 +134,24 @@ app.post("/login", async (req, res) => {
       </script>
     `);
   } catch (err) {
-    res.send("Error: " + err);
+    console.error(err);
+    res.send(`
+      <script>
+        alert("Error occurred during login!");
+        window.location.href = "/login.html";
+      </script>
+    `);
   }
 });
 
-// ⭐ SAVE COURSE ROUTE
+// SAVE COURSE
 app.post("/save-course", async (req, res) => {
   if (!req.session.userEmail) {
     return res.send(`
-      <script>alert("You must login first!"); window.location.href="/login.html";</script>
+      <script>
+        alert("You must login first!");
+        window.location.href="/login.html";
+      </script>
     `);
   }
 
@@ -136,24 +173,38 @@ app.post("/save-course", async (req, res) => {
       </script>
     `);
   } catch (err) {
-    res.send("Error: " + err);
+    console.error(err);
+    res.send(`
+      <script>
+        alert("Error occurred while saving course!");
+        window.location.href = "/courses.html";
+      </script>
+    `);
   }
 });
 
-// ⭐ GET MY COURSES
+// GET MY COURSES
 app.get("/my-courses", async (req, res) => {
   if (!req.session.userEmail) return res.json([]);
 
-  const courses = await Course.find({ email: req.session.userEmail });
-  res.json(courses);
+  try {
+    const courses = await Course.find({ email: req.session.userEmail });
+    res.json(courses);
+  } catch (err) {
+    console.error(err);
+    res.json([]);
+  }
 });
 
-// ⭐ LOGOUT
+// LOGOUT
 app.get("/logout", (req, res) => {
   req.session.destroy(() => {
     res.redirect("/index.html");
   });
 });
 
-// ⭐ START SERVER
-app.listen(5000, () => console.log("Server running on port 5000"));
+// -------------------- START SERVER --------------------
+const PORT = 5000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
+});
